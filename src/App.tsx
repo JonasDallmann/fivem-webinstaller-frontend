@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { InstallForm } from './components/InstallForm';
 import { ResultCard } from './components/ResultCard';
 import { WelcomeModal } from './components/WelcomeModal';
-import { AGBPage } from './components/AGBPage';
+import { AGBPage } from './components/Terms';
 import { Credits } from './components/Credits';
 import { Privacy } from './components/Privacy';
 import { Imprint } from './components/Imprint';
@@ -14,47 +14,69 @@ type ViewState = 'INSTALLER' | 'AGB' | 'CREDITS' | 'PRIVACY' | 'IMPRINT';
 function App() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<InstallResponse | null>(null);
-    
     const [lastFormData, setLastFormData] = useState<InstallFormData | null>(null);
 
     const [showWelcome, setShowWelcome] = useState(true);
     const [currentView, setCurrentView] = useState<ViewState>('INSTALLER');
 
-    const logsEndRef = useRef<HTMLDivElement>(null);
+    const pollingRef = useRef<number | null>(null);
 
     useEffect(() => {
-        if (logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [result, loading]);
+        return () => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+        };
+    }, []);
+
+    const startPolling = (host: string) => {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+
+        pollingRef.current = window.setInterval(async () => {
+            try {
+                const statusData = await InstallService.getStatus(host);
+                
+                if (statusData.status === 'COMPLETED' || statusData.status === 'ERROR') {
+                    if (pollingRef.current) clearInterval(pollingRef.current);
+                    setLoading(false);
+                    
+                    if (statusData.result) {
+                        setResult(statusData.result);
+                    } else {
+                        setResult({
+                            success: false,
+                            raw_log: statusData.logs, 
+                            error: 'Unknown Error (Status: ' + statusData.status + ')',
+                            error_code: 'UNKNOWN'
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Polling Error:", err);
+            }
+        }, 1000); 
+    };
 
     const handleInstall = async (formData: InstallFormData) => {
         setLoading(true);
         setResult(null);
+        setLastFormData(formData);
         
-        setLastFormData(formData); 
-        
-        console.log("Sending Request:", formData); 
-        
-        const response = await InstallService.installServer(formData);
-        
-        setResult(response);
-        setLoading(false);
+        try {
+            await InstallService.startInstall(formData);
+            startPolling(formData.host);
+        } catch (error: any) {
+            setLoading(false);
+            setResult({
+                success: false,
+                raw_log: '',
+                error: error.message || 'Failed to start installation',
+                error_code: 'START_ERROR'
+            });
+        }
     };
 
     const handleForceRetry = () => {
-        if (!lastFormData) {
-            console.error("No previous data found!");
-            return;
-        }
-        
-        console.log("Starting Force-Retry...");
-        
-        const forceData: InstallFormData = { 
-            ...lastFormData, 
-            force_overwrite: true 
-        };
-        
+        if (!lastFormData) return;
+        const forceData: InstallFormData = { ...lastFormData, force_overwrite: true };
         handleInstall(forceData);
     };
 
@@ -139,22 +161,37 @@ function App() {
                                 />
                             </div>
                         ) : (
-                            <div className="flex-1 p-6 font-mono text-sm overflow-y-auto custom-scrollbar relative flex flex-col">
+                            <div className="flex-1 flex flex-col relative overflow-hidden">
                                 {loading ? (
-                                    <div className="m-auto text-center space-y-4">
-                                        <div className="inline-block w-12 h-12 border-4 border-slate-800 border-t-blue-500 rounded-full animate-spin"></div>
-                                        <p className="text-blue-400 animate-pulse">Installation in progress...</p>
-                                        <p className="text-xs text-slate-600">Please wait, this may take up to 90s.</p>
+                                    <div className="m-auto text-center space-y-8 p-10 max-w-md animate-in fade-in zoom-in duration-500">
+                                        
+                                        <div className="relative mx-auto w-24 h-24">
+                                            <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse"></div>
+                                            <div className="relative w-full h-full border-4 border-slate-800 border-t-blue-500 rounded-full animate-spin"></div>
+                                            <div className="absolute inset-0 flex items-center justify-center text-blue-500 font-bold text-xl animate-pulse">
+                                                Fx
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <h3 className="text-2xl font-semibold text-white">Installing Server...</h3>
+                                            <p className="text-slate-400 leading-relaxed">
+                                                Please wait while we configure your FiveM server.
+                                            </p>
+                                        </div>
+
+                                        <div className="inline-block bg-slate-900/50 border border-slate-800 rounded-lg px-4 py-2 text-xs text-orange-400/90 font-medium">
+                                            ⚠️ Do not close this window. <br/> This can take up to 90 seconds.
+                                        </div>
                                     </div>
                                 ) : (
-                                    <div className="m-auto text-center opacity-30 select-none">
-                                        <p className="text-6xl mb-4 text-slate-700">_</p>
-                                        <p>Waiting for start...</p>
+                                    <div className="m-auto text-center opacity-20 select-none pointer-events-none">
+                                        <div className="text-9xl font-black text-slate-800 mb-6">Fx</div>
+                                        <p className="text-slate-500 text-lg">Ready to deploy</p>
                                     </div>
                                 )}
                             </div>
                         )}
-                        <div ref={logsEndRef} />
                     </div>
                 </div>
             </main>

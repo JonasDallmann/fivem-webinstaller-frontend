@@ -1,55 +1,44 @@
-import type { InstallFormData, InstallResponse } from '../types';
+import type { InstallFormData, InstallStartResponse, JobStatusResponse } from '../types';
+
+const API_BASE = '/api';
 
 export const InstallService = {
-    installServer: async (formData: InstallFormData): Promise<InstallResponse> => {
+    async startInstall(data: InstallFormData): Promise<InstallStartResponse> {
         try {
-            const response = await fetch('/api/install', {
+            const response = await fetch(`${API_BASE}/install`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(data),
             });
 
-            const text = await response.text();
-            
-            const match = text.match(/JSON_START\s*([\s\S]*?)\s*JSON_END/);
+            const json = await response.json();
 
-            if (match && match[1]) {
-                const cleanContent = match[1].trim();
-                try {
-                    const jsonString = cleanContent.startsWith('"') ? cleanContent : `"${cleanContent}"`;
-                    const unescapedString = JSON.parse(jsonString);
-                    return JSON.parse(unescapedString) as InstallResponse;
-                } catch (e) {
-                    try { return JSON.parse(cleanContent) as InstallResponse; } catch (e2) {}
-                    
-                    return {
-                        success: false,
-                        error: "Script-Antwort konnte nicht geparst werden.",
-                        raw_log: `Content: ${cleanContent}\nError: ${e}`
-                    };
-                }
-            } 
-            try {
-                const directJson = JSON.parse(text);
-                
-                if (directJson && (typeof directJson.success === 'boolean' || directJson.error)) {
-                    return directJson as InstallResponse;
-                }
-            } catch (e) {
+            if (!response.ok) {
+                throw new Error(json.error || 'Installation konnte nicht gestartet werden.');
             }
 
-            return {
-                success: false,
-                error: "Ungültige Antwortstruktur vom Backend (Keine Marker & kein JSON).",
-                raw_log: text
-            };
-
+            return json as InstallStartResponse;
         } catch (error: any) {
-            return {
-                success: false,
-                error: "Netzwerkfehler: Konnte API nicht erreichen",
-                raw_log: error.toString()
-            };
+            console.error("API Start Error:", error);
+            throw error;
+        }
+    },
+
+    async getStatus(host: string): Promise<JobStatusResponse> {
+        try {
+            const response = await fetch(`${API_BASE}/status?host=${encodeURIComponent(host)}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Status-Abfrage fehlgeschlagen: ${response.statusText}`);
+            }
+
+            return await response.json() as JobStatusResponse;
+        } catch (error: any) {
+            console.error("API Status Error:", error);
+            throw error;
         }
     }
 };

@@ -22,3 +22,16 @@ export interface InstallResponse {
     root_user?: string;
     root_pass?: string;
 }
+
+export interface InstallStartResponse {
+    status: string;
+    message: string;
+    ip: string;
+}
+
+export interface JobStatusResponse {
+    ip: string;
+    status: 'RUNNING' | 'COMPLETED' | 'ERROR';
+    logs: string;
+    result?: InstallResponse;
+}
