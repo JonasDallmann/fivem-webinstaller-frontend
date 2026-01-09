@@ -13,6 +13,10 @@ export const InstallService = {
 
             const json = await response.json();
 
+            if (response.status === 429) {
+                throw new Error(json.error || "Zu viele Anfragen. Bitte warte eine Minute.");
+            }
+
             if (!response.ok) {
                 throw new Error(json.error || 'Installation konnte nicht gestartet werden.');
             }
@@ -31,11 +35,13 @@ export const InstallService = {
                 headers: { 'Content-Type': 'application/json' }
             });
 
+            const json = await response.json();
+
             if (!response.ok) {
-                throw new Error(`Status-Abfrage fehlgeschlagen: ${response.statusText}`);
+                throw new Error(json.error || `Status-Abfrage fehlgeschlagen: ${response.statusText}`);
             }
 
-            return await response.json() as JobStatusResponse;
+            return json as JobStatusResponse;
         } catch (error: any) {
             console.error("API Status Error:", error);
             throw error;
